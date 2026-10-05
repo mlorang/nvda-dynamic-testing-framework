@@ -3,3 +3,7 @@ node_modules/
 
 # npm logs
 npm-debug.log*
+
+# Playwright output
+test-results/
+playwright-report/
