@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { runAxe } from "./helpers/axe";
+import { runAxe, diffViolations } from "./helpers/axe";
+import { watchDom, DomChange } from "./helpers/watch-dom";
 
 // The menu scenario on Team Y's site. The site uses hash routing, so the
 // "page" lives after the # and the server always serves the same index.html.
@@ -7,6 +8,19 @@ import { runAxe } from "./helpers/axe";
 // broken will still pass but we are asserting what the failure is and checking
 const menuUrl = (variant: "accessible" | "broken") =>
   `#/disclosure/menu?variant=${variant}`;
+
+// The DOM change we're waiting for: the change a screen reader relies on to
+// announce "expanded" and find the menu.
+const menuOpened = (changes: DomChange[]) =>
+  changes.some(
+    (c) => c.attributeName === "aria-expanded" && c.newValue === "true",
+  ) &&
+  changes.some(
+    (c) =>
+      c.target === "ul#actions-menu" &&
+      c.attributeName === "hidden" &&
+      c.newValue === null,
+  );
 
 test("menu page loads", async ({ page }) => {
   await page.goto(menuUrl("accessible"));
@@ -23,15 +37,33 @@ test("menu page loads", async ({ page }) => {
   await expect(page.getByTestId("menu")).toBeHidden();
 });
 
-test("accessible: baseline axe scan is clean", async ({ page }, testInfo) => {
+test("accessible: opening the menu is detected and stays clean", async ({
+  page,
+}, testInfo) => {
   await page.goto(menuUrl("accessible"));
   await expect(page.getByTestId("trigger")).toBeVisible();
 
-  const violations = await runAxe(page, testInfo, "before");
-  expect(violations.map((v) => v.id)).toEqual([]);
+  // 1. Baseline scan of the page as it loaded.
+  const before = await runAxe(page, testInfo, "before");
+  expect(before.map((v) => v.id)).toEqual([]);
+
+  // 2. Start watching BEFORE the click so the change can't slip past us.
+  const watcher = await watchDom(page, ".menu-wrapper");
+
+  // 3. Cause the change.
+  await page.getByTestId("trigger").click();
+
+  // 4. Wait until the observer has reported the change we care about.
+  const changes = await watcher.waitFor(menuOpened);
+  console.log("[dom] detected:", changes);
+
+  // 5. Same scan again, against the new state of the page.
+  const after = await runAxe(page, testInfo, "after");
+  expect(after.map((v) => v.id)).toEqual([]);
+  expect(diffViolations(before, after)).toEqual([]);
 });
 
-test("broken: baseline axe scan catches the unnamed button", async ({
+test("broken: opening the menu is NOT announced as a state change", async ({
   page,
 }, testInfo) => {
   await page.goto(menuUrl("broken"));
@@ -39,6 +71,21 @@ test("broken: baseline axe scan catches the unnamed button", async ({
 
   // The broken trigger is an icon-only <button> with no accessible name,
   // so a screen reader would just say "button". axe reports that as button-name.
-  const violations = await runAxe(page, testInfo, "before");
-  expect(violations.map((v) => v.id)).toContain("button-name");
+  const before = await runAxe(page, testInfo, "before");
+  expect(before.map((v) => v.id)).toContain("button-name");
+
+  const watcher = await watchDom(page, ".menu-wrapper");
+  await page.getByTestId("trigger").click();
+
+  // The click DOES change the DOM (the menu is inserted)...
+  await expect(page.getByTestId("menu")).toBeVisible();
+  // ...but never via aria-expanded / hidden, so our watcher must time out.
+  await expect(watcher.waitFor(menuOpened, 2000)).rejects.toThrow(
+    "expected change not seen",
+  );
+  console.log("[dom] recorded instead:", watcher.changes);
+
+  const after = await runAxe(page, testInfo, "after");
+  expect(after.map((v) => v.id)).toContain("button-name");
+  console.log("[axe] new since baseline:", diffViolations(before, after));
 });

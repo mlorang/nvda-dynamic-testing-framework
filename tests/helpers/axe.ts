@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page, TestInfo } from '@playwright/test';
+import type { Result } from 'axe-core';
 
 // Only run the rules that map to WCAG 2.0/2.1 levels A and AA.
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
@@ -25,4 +26,24 @@ export async function runAxe(page: Page, testInfo: TestInfo, label: string) {
   });
 
   return results.violations;
+}
+
+/**
+ * Returns the problems in `after` that were NOT already in `before`, i.e. the
+ * ones the DOM change introduced. A problem is one rule failing on one
+ * element, so the same rule failing on a new element counts as new.
+ */
+export function diffViolations(before: Result[], after: Result[]) {
+  // node.target is the CSS selector axe uses to point at the element.
+  const key = (ruleId: string, target: unknown) => `${ruleId} ${JSON.stringify(target)}`;
+
+  const seenBefore = new Set(
+    before.flatMap(v => v.nodes.map(node => key(v.id, node.target))),
+  );
+
+  return after.flatMap(v =>
+    v.nodes
+      .filter(node => !seenBefore.has(key(v.id, node.target)))
+      .map(node => ({ rule: v.id, element: node.target.join(' ') })),
+  );
 }
