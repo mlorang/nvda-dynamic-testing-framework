@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, Page, TestInfo } from "@playwright/test";
 import { runAxe, diffViolations } from "./helpers/axe";
 import { watchDom, DomChange } from "./helpers/watch-dom";
 
@@ -21,6 +21,21 @@ const menuOpened = (changes: DomChange[]) =>
       c.attributeName === "hidden" &&
       c.newValue === null,
   );
+
+// Opens the menu. In the "chromium" project Playwright clicks for us; in the
+// "manual" project we wait for a person to click in the visible browser.
+// Either way the watcher started earlier sees the same DOM change.
+async function clickTrigger(page: Page, testInfo: TestInfo) {
+  if (testInfo.project.name === "manual") {
+    console.log(">>> Click the menu button in the browser window <<<");
+    // This only waits for the human. The watcher still does the detecting.
+    await expect(page.getByTestId("menu")).toBeVisible({
+      timeout: testInfo.timeout,
+    });
+  } else {
+    await page.getByTestId("trigger").click();
+  }
+}
 
 test("menu page loads", async ({ page }) => {
   await page.goto(menuUrl("accessible"));
@@ -50,8 +65,8 @@ test("accessible: opening the menu is detected and stays clean", async ({
   // 2. Start watching BEFORE the click so the change can't slip past us.
   const watcher = await watchDom(page, ".menu-wrapper");
 
-  // 3. Cause the change.
-  await page.getByTestId("trigger").click();
+  // 3. Cause the change (automatically, or by a person in manual mode).
+  await clickTrigger(page, testInfo);
 
   // 4. Wait until the observer has reported the change we care about.
   const changes = await watcher.waitFor(menuOpened);
@@ -75,7 +90,7 @@ test("broken: opening the menu is NOT announced as a state change", async ({
   expect(before.map((v) => v.id)).toContain("button-name");
 
   const watcher = await watchDom(page, ".menu-wrapper");
-  await page.getByTestId("trigger").click();
+  await clickTrigger(page, testInfo);
 
   // The click DOES change the DOM (the menu is inserted)...
   await expect(page.getByTestId("menu")).toBeVisible();
