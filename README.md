@@ -29,9 +29,9 @@ npx playwright install chromium
 | `npm test` | Playwright clicks the button itself (headless) |
 | `npm run test:headed` | Same, but you can watch the browser |
 | `npm run test:manual` | A browser opens and waits for **you** to click the menu button (2 min per test) |
-| `npx playwright show-report` | Opens the HTML report from the last run |
+| `npx playwright show-report` | Reopens the HTML report from the last run |
 
-In the report, each test has these attachments:
+The HTML report opens in your browser automatically when a run finishes (press Ctrl+C in the terminal to stop the report server). In the report, each test has these attachments:
 
 - `axe-before.json` and `axe-after.json`: the full axe results (violations, passes, incomplete) for each scan.
 - `stdout`: what the test logged, including the DOM changes the observer recorded.
