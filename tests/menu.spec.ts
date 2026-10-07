@@ -98,7 +98,7 @@ test("broken: opening the menu is NOT announced as a state change", async ({
   await expect(watcher.waitFor(menuOpened, 2000)).rejects.toThrow(
     "expected change not seen",
   );
-  console.log("[dom] recorded instead:", watcher.changes);
+  console.log("[dom] expected 'expanded' signal NOT seen. Only these changes happened:", watcher.changes);
 
   const after = await runAxe(page, testInfo, "after");
   expect(after.map((v) => v.id)).toContain("button-name");
